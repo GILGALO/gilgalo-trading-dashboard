@@ -1,7 +1,10 @@
+// constants.ts
+
 export const FOREX_PAIRS = [
   "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF",
   "AUD/USD", "USD/CAD", "NZD/USD", "EUR/GBP",
-  "EUR/JPY", "GBP/JPY", "AUD/JPY", "EUR/AUD"
+  "EUR/JPY", "GBP/JPY", "AUD/JPY", "EUR/AUD",
+  "XAU/USD" // Gold
 ] as const;
 
 export const TIMEFRAMES = [
@@ -54,27 +57,27 @@ export interface Signal {
 export const TRADING_SESSIONS = {
   TOKYO: {
     name: "Tokyo",
-    start: 19, // 7 PM GMT-4 (11 PM GMT)
-    end: 4,    // 4 AM GMT-4 (8 AM GMT)
-    pairs: ["USD/JPY", "AUD/JPY", "GBP/JPY", "EUR/JPY", "AUD/USD", "NZD/USD"]
+    start: 19, // 7 PM GMT-4
+    end: 4,    // 4 AM GMT-4
+    pairs: ["USD/JPY", "AUD/JPY", "GBP/JPY", "EUR/JPY", "AUD/USD", "NZD/USD", "XAU/USD"]
   },
   LONDON: {
     name: "London",
-    start: 3,  // 3 AM GMT-4 (7 AM GMT)
-    end: 12,   // 12 PM GMT-4 (4 PM GMT)
-    pairs: ["EUR/USD", "GBP/USD", "EUR/GBP", "USD/CHF", "EUR/JPY", "GBP/JPY"]
+    start: 3,  // 3 AM GMT-4
+    end: 12,   // 12 PM GMT-4
+    pairs: ["EUR/USD", "GBP/USD", "EUR/GBP", "USD/CHF", "EUR/JPY", "GBP/JPY", "XAU/USD"]
   },
   NEW_YORK: {
     name: "New York",
-    start: 8,  // 8 AM GMT-4 (12 PM GMT)
-    end: 17,   // 5 PM GMT-4 (9 PM GMT)
-    pairs: ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", "AUD/USD", "USD/CHF"]
+    start: 8,  // 8 AM GMT-4
+    end: 17,   // 5 PM GMT-4
+    pairs: ["EUR/USD", "GBP/USD", "USD/JPY", "USD/CAD", "AUD/USD", "USD/CHF", "XAU/USD"]
   },
   SYDNEY: {
     name: "Sydney",
-    start: 17, // 5 PM GMT-4 (9 PM GMT)
-    end: 2,    // 2 AM GMT-4 (6 AM GMT)
-    pairs: ["AUD/USD", "NZD/USD", "AUD/JPY", "EUR/AUD"]
+    start: 17, // 5 PM GMT-4
+    end: 2,    // 2 AM GMT-4
+    pairs: ["AUD/USD", "NZD/USD", "AUD/JPY", "EUR/AUD", "XAU/USD"]
   }
 } as const;
 
