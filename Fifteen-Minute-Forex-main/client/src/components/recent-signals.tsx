@@ -1,17 +1,55 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Signal } from "@/lib/constants";
 import { format } from "date-fns";
-import { TrendingUp, TrendingDown, Clock, CheckCircle2, XCircle, Timer, Activity, Filter } from "lucide-react";
+import { TrendingUp, TrendingDown, Clock, CheckCircle2, XCircle, Timer, Activity } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface RecentSignalsProps {
   signals: Signal[];
+  onSignalClick?: (signal: Signal) => void;
 }
 
-function RecentSignals({ signals }: RecentSignalsProps) {
+function CountdownTimer({ endTime }: { endTime: string }) {
+  const [timeLeft, setTimeLeft] = useState("");
+
+  useEffect(() => {
+    const updateCountdown = () => {
+      const now = new Date();
+      const [endH, endM] = endTime.split(':').map(Number);
+      const endDate = new Date();
+      endDate.setHours(endH, endM, 0, 0);
+      
+      if (endDate < now) {
+        endDate.setDate(endDate.getDate() + 1);
+      }
+
+      const diff = endDate.getTime() - now.getTime();
+      if (diff <= 0) {
+        setTimeLeft("00:00");
+        return;
+      }
+
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [endTime]);
+
+  return (
+    <div className="flex items-center gap-1 text-xs font-mono text-cyan-400 bg-cyan-500/10 px-2 py-1 rounded-lg">
+      <Timer className="w-3 h-3" />
+      {timeLeft}
+    </div>
+  );
+}
+
+function RecentSignals({ signals, onSignalClick }: RecentSignalsProps) {
   const [filter, setFilter] = useState<'all' | 'active' | 'won' | 'lost'>('all');
 
   const filteredSignals = signals.filter(signal => {
@@ -43,7 +81,6 @@ function RecentSignals({ signals }: RecentSignalsProps) {
           )}
         </CardTitle>
         
-        {/* Filter Buttons */}
         <div className="flex gap-2 flex-wrap">
           <Button
             variant="outline"
@@ -103,7 +140,8 @@ function RecentSignals({ signals }: RecentSignalsProps) {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="flex items-center gap-3 p-3 hover:bg-primary/5 transition-all duration-300 rounded-xl my-1 glass-panel border border-transparent hover:border-primary/30 group"
+                onClick={() => onSignalClick?.(signal)}
+                className="flex items-center gap-3 p-3 hover:bg-primary/5 transition-all duration-300 rounded-xl my-1 glass-panel border border-transparent hover:border-primary/30 group cursor-pointer"
               >
                 <div className={`shrink-0 p-3 rounded-xl shadow-lg ${signal.type === "CALL" ? "bg-emerald-500/20 border-2 border-emerald-500/30" : "bg-rose-500/20 border-2 border-rose-500/30"} group-hover:scale-110 transition-transform duration-300`}>
                   {signal.type === "CALL" ? (
@@ -119,6 +157,9 @@ function RecentSignals({ signals }: RecentSignalsProps) {
                     <span className={`text-xs font-black px-2 py-0.5 rounded-full ${signal.type === "CALL" ? "text-emerald-500 bg-emerald-500/20" : "text-rose-500 bg-rose-500/20"}`}>
                       {signal.type}
                     </span>
+                    {signal.status === 'active' && (
+                      <CountdownTimer endTime={signal.endTime} />
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-2 font-medium">
                     <span>{format(signal.timestamp, "HH:mm")}</span>

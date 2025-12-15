@@ -2,20 +2,30 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { type Signal } from "@/lib/constants";
 import { Toaster } from "@/components/ui/toaster";
 import { useToast } from "@/hooks/use-toast";
-import { Activity, Wifi, TrendingUp, Zap, BarChart3, Target, TrendingDown, Award, Clock, Calendar } from "lucide-react";
+import { Activity, Wifi, TrendingUp, Zap, BarChart3, Target, TrendingDown, Award, Clock, Calendar, BookOpen, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ErrorBoundary from "@/components/error-boundary";
+import SettingsModal from "@/components/settings-modal";
+import ThemeToggle from "@/components/theme-toggle";
+import SignalDetailModal from "@/components/signal-detail-modal";
+import FloatingAlerts from "@/components/floating-alerts";
 
 const MarketTicker = lazy(() => import("@/components/market-ticker"));
 const SignalGenerator = lazy(() => import("@/components/signal-generator"));
 const RecentSignals = lazy(() => import("@/components/recent-signals"));
 const TradingChart = lazy(() => import("@/components/trading-chart"));
+const JournalTable = lazy(() => import("@/components/journal-table"));
 
 export default function Home() {
   const [signals, setSignals] = useState<Signal[]>([]);
+  const [previousSignals, setPreviousSignals] = useState<Signal[]>([]);
   const [activePair, setActivePair] = useState("EUR/USD");
+  const [selectedSignal, setSelectedSignal] = useState<Signal | null>(null);
+  const [signalModalOpen, setSignalModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("dashboard");
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -25,6 +35,23 @@ export default function Home() {
   const activeSignals = signals.filter(s => s.status === 'active').length;
   const winRate = totalSignals > 0 ? ((wonSignals / (wonSignals + lostSignals)) * 100).toFixed(1) : '0.0';
   const avgConfidence = totalSignals > 0 ? (signals.reduce((acc, s) => acc + s.confidence, 0) / totalSignals).toFixed(1) : '0.0';
+
+  useEffect(() => {
+    const savedSignals = localStorage.getItem("gilgalo-signals");
+    if (savedSignals) {
+      try {
+        setSignals(JSON.parse(savedSignals));
+      } catch (e) {
+        console.error("Failed to load signals from storage");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (signals.length > 0) {
+      localStorage.setItem("gilgalo-signals", JSON.stringify(signals));
+    }
+  }, [signals]);
 
   useEffect(() => {
     const dateInterval = setInterval(() => {
@@ -39,6 +66,8 @@ export default function Home() {
       const now = new Date();
       const currentTimeStr = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
+      setPreviousSignals([...signals]);
+      
       setSignals(prevSignals => 
         prevSignals.map(signal => {
           if (signal.status !== 'active') return signal;
@@ -63,9 +92,10 @@ export default function Home() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [signals]);
 
   const handleSignalGenerated = (signal: Signal) => {
+    setPreviousSignals([...signals]);
     setSignals(prev => [signal, ...prev]);
     toast({
       title: "New Signal Generated",
@@ -74,8 +104,40 @@ export default function Home() {
     });
   };
 
+  const handleSignalClick = (signal: Signal) => {
+    setSelectedSignal(signal);
+    setSignalModalOpen(true);
+  };
+
+  const exportData = () => {
+    const headers = ["Date", "Time", "Pair", "Type", "Entry", "Stop Loss", "Take Profit", "Confidence", "Status"];
+    const rows = signals.map(s => [
+      new Date(s.timestamp).toLocaleDateString(),
+      s.startTime,
+      s.pair,
+      s.type,
+      s.entry.toFixed(5),
+      s.stopLoss.toFixed(5),
+      s.takeProfit.toFixed(5),
+      `${s.confidence}%`,
+      s.status.toUpperCase()
+    ]);
+
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gilgalo-trading-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-primary/20 relative overflow-x-hidden">
+      <FloatingAlerts signals={signals} previousSignals={previousSignals} />
+      <SignalDetailModal signal={selectedSignal} open={signalModalOpen} onOpenChange={setSignalModalOpen} />
+      
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-20">
         <div className="absolute top-20 left-20 w-[400px] h-[400px] bg-emerald-500/15 rounded-full blur-[100px]" />
         <div className="absolute top-1/3 right-20 w-[350px] h-[350px] bg-cyan-500/15 rounded-full blur-[90px]" />
@@ -113,10 +175,13 @@ export default function Home() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <ThemeToggle />
+              <SettingsModal />
+              
               <div className="glass-panel px-5 py-2.5 rounded-xl flex items-center gap-3 border border-emerald-400/30">
                 <Wifi className="w-4 h-4 text-emerald-400" />
                 <span className="text-sm font-semibold text-emerald-400 tracking-wide">LIVE</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               </div>
 
               <div className="glass-panel px-4 py-2.5 rounded-xl flex items-center gap-2 border border-primary/30">
@@ -141,69 +206,69 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-8 mt-6">
-            <Card className="glass-panel border-emerald-500/30 overflow-hidden" data-testid="card-active-signals">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-8 mt-6">
+            <Card className="glass-panel border-emerald-500/30 overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2 gap-2">
                   <Target className="w-5 h-5 text-emerald-400" />
                   <span className="text-xs text-muted-foreground font-semibold uppercase">Active</span>
                 </div>
-                <div className="text-2xl font-black text-emerald-400" data-testid="text-active-count">{activeSignals}</div>
+                <div className="text-2xl font-black text-emerald-400">{activeSignals}</div>
                 <div className="text-xs text-muted-foreground mt-1">Running now</div>
               </CardContent>
             </Card>
 
-            <Card className="glass-panel border-emerald-500/30 overflow-hidden" data-testid="card-won-signals">
+            <Card className="glass-panel border-emerald-500/30 overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2 gap-2">
                   <TrendingUp className="w-5 h-5 text-emerald-400" />
                   <span className="text-xs text-muted-foreground font-semibold uppercase">Won</span>
                 </div>
-                <div className="text-2xl font-black text-emerald-400" data-testid="text-won-count">{wonSignals}</div>
+                <div className="text-2xl font-black text-emerald-400">{wonSignals}</div>
                 <div className="text-xs text-muted-foreground mt-1">Successful</div>
               </CardContent>
             </Card>
 
-            <Card className="glass-panel border-rose-500/30 overflow-hidden" data-testid="card-lost-signals">
+            <Card className="glass-panel border-rose-500/30 overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2 gap-2">
                   <TrendingDown className="w-5 h-5 text-rose-400" />
                   <span className="text-xs text-muted-foreground font-semibold uppercase">Lost</span>
                 </div>
-                <div className="text-2xl font-black text-rose-400" data-testid="text-lost-count">{lostSignals}</div>
+                <div className="text-2xl font-black text-rose-400">{lostSignals}</div>
                 <div className="text-xs text-muted-foreground mt-1">Unsuccessful</div>
               </CardContent>
             </Card>
 
-            <Card className="glass-panel border-cyan-500/30 overflow-hidden" data-testid="card-win-rate">
+            <Card className="glass-panel border-cyan-500/30 overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2 gap-2">
                   <Award className="w-5 h-5 text-cyan-400" />
                   <span className="text-xs text-muted-foreground font-semibold uppercase">Win Rate</span>
                 </div>
-                <div className="text-2xl font-black text-cyan-400" data-testid="text-win-rate">{winRate}%</div>
+                <div className="text-2xl font-black text-cyan-400">{winRate}%</div>
                 <div className="text-xs text-muted-foreground mt-1">Success ratio</div>
               </CardContent>
             </Card>
 
-            <Card className="glass-panel border-blue-500/30 overflow-hidden" data-testid="card-avg-confidence">
+            <Card className="glass-panel border-blue-500/30 overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2 gap-2">
                   <Zap className="w-5 h-5 text-blue-400" />
                   <span className="text-xs text-muted-foreground font-semibold uppercase">Avg. Conf.</span>
                 </div>
-                <div className="text-2xl font-black text-blue-400" data-testid="text-avg-confidence">{avgConfidence}%</div>
+                <div className="text-2xl font-black text-blue-400">{avgConfidence}%</div>
                 <div className="text-xs text-muted-foreground mt-1">Average</div>
               </CardContent>
             </Card>
 
-            <Card className="glass-panel border-primary/30 overflow-hidden" data-testid="card-total-signals">
+            <Card className="glass-panel border-primary/30 overflow-hidden">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2 gap-2">
                   <BarChart3 className="w-5 h-5 text-primary" />
                   <span className="text-xs text-muted-foreground font-semibold uppercase">Total</span>
                 </div>
-                <div className="text-2xl font-black text-primary" data-testid="text-total-count">{totalSignals}</div>
+                <div className="text-2xl font-black text-primary">{totalSignals}</div>
                 <div className="text-xs text-muted-foreground mt-1">All signals</div>
               </CardContent>
             </Card>
@@ -215,7 +280,6 @@ export default function Home() {
               size="sm"
               onClick={() => setSignals([])}
               className="glass-panel border-rose-500/30 text-rose-400"
-              data-testid="button-clear-history"
             >
               <Activity className="w-4 h-4 mr-2" />
               Clear History
@@ -223,64 +287,87 @@ export default function Home() {
             <Button 
               variant="outline" 
               size="sm"
+              onClick={() => setActiveTab("journal")}
               className="glass-panel border-cyan-500/30 text-cyan-400"
-              data-testid="button-view-analytics"
             >
-              <Clock className="w-4 h-4 mr-2" />
-              View Analytics
+              <BookOpen className="w-4 h-4 mr-2" />
+              View Journal
             </Button>
             <Button 
               variant="outline" 
               size="sm"
+              onClick={exportData}
               className="glass-panel border-emerald-500/30 text-emerald-400"
-              data-testid="button-export-data"
             >
-              <Target className="w-4 h-4 mr-2" />
-              Export Data
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
             </Button>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 md:gap-8">
-          <div className="lg:col-span-5 xl:col-span-4 space-y-4 sm:space-y-6">
-            <ErrorBoundary>
-              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                <SignalGenerator 
-                  onSignalGenerated={handleSignalGenerated} 
-                  onPairChange={setActivePair}
-                />
-              </Suspense>
-            </ErrorBoundary>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="glass-panel border border-primary/30 mb-6">
+            <TabsTrigger value="dashboard" className="data-[state=active]:bg-primary/20">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Dashboard
+            </TabsTrigger>
+            <TabsTrigger value="journal" className="data-[state=active]:bg-primary/20">
+              <BookOpen className="w-4 h-4 mr-2" />
+              Journal
+            </TabsTrigger>
+          </TabsList>
 
-            <div className="block lg:hidden">
-              <div className="h-[350px] sm:h-[400px] md:h-[450px]">
-                <ErrorBoundary fallback={<Skeleton className="h-full w-full" />}>
+          <TabsContent value="dashboard">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 md:gap-8">
+              <div className="lg:col-span-5 xl:col-span-4 space-y-4 sm:space-y-6">
+                <ErrorBoundary>
                   <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                    <TradingChart pair={activePair} />
+                    <SignalGenerator 
+                      onSignalGenerated={handleSignalGenerated} 
+                      onPairChange={setActivePair}
+                    />
                   </Suspense>
                 </ErrorBoundary>
+
+                <div className="block lg:hidden">
+                  <div className="h-[350px] sm:h-[400px] md:h-[450px]">
+                    <ErrorBoundary fallback={<Skeleton className="h-full w-full" />}>
+                      <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                        <TradingChart pair={activePair} />
+                      </Suspense>
+                    </ErrorBoundary>
+                  </div>
+                </div>
+
+                <div className="max-h-[300px] sm:max-h-[350px] lg:max-h-[400px]">
+                  <ErrorBoundary>
+                    <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                      <RecentSignals signals={signals} onSignalClick={handleSignalClick} />
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
+              </div>
+
+              <div className="hidden lg:block lg:col-span-7 xl:col-span-8">
+                <div className="h-[650px] lg:h-[700px] xl:h-[750px] sticky top-4">
+                  <ErrorBoundary fallback={<Skeleton className="h-full w-full" />}>
+                    <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                      <TradingChart pair={activePair} />
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
               </div>
             </div>
+          </TabsContent>
 
-            <div className="max-h-[300px] sm:max-h-[350px] lg:max-h-[400px]">
-              <ErrorBoundary>
-                <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                  <RecentSignals signals={signals} />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          </div>
-
-          <div className="hidden lg:block lg:col-span-7 xl:col-span-8">
-            <div className="h-[650px] lg:h-[700px] xl:h-[750px] sticky top-4">
-              <ErrorBoundary fallback={<Skeleton className="h-full w-full" />}>
-                <Suspense fallback={<Skeleton className="h-96 w-full" />}>
-                  <TradingChart pair={activePair} />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          </div>
-        </div>
+          <TabsContent value="journal">
+            <ErrorBoundary>
+              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
+                <JournalTable signals={signals} />
+              </Suspense>
+            </ErrorBoundary>
+          </TabsContent>
+        </Tabs>
       </main>
       <Toaster />
     </div>

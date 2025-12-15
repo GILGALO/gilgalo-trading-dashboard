@@ -9,6 +9,7 @@ import { FOREX_PAIRS, TIMEFRAMES, type Signal, getCurrentSession } from "@/lib/c
 import { Loader2, Zap, Clock, Send, Activity, TrendingUp, TrendingDown, Target, Globe, Sparkles, Shield, RefreshCw, Settings, Download, Share2 } from "lucide-react";
 import { format, addMinutes } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { loadSettings } from "@/components/settings-modal";
 
 interface SignalGeneratorProps {
   onSignalGenerated: (signal: Signal) => void;
@@ -51,14 +52,32 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
   const [telegramConfigured, setTelegramConfigured] = useState(false);
   const { toast } = useToast();
 
-  const MIN_CONFIDENCE_THRESHOLD = 50; // Minimum required confidence percentage
-  const MAX_RESCAN_ATTEMPTS = 3; // Maximum number of rescans allowed
+  const MIN_CONFIDENCE_THRESHOLD = 50;
+  const MAX_RESCAN_ATTEMPTS = 3;
+
+  useEffect(() => {
+    const settings = loadSettings();
+    if (settings.defaultPair && availablePairs.includes(settings.defaultPair)) {
+      setSelectedPair(settings.defaultPair);
+      onPairChange(settings.defaultPair);
+    }
+    if (settings.autoScanEnabled) {
+      setAutoMode(true);
+    }
+    setTelegramConfigured(!!settings.telegramBotToken && !!settings.telegramChatId);
+  }, []);
 
   useEffect(() => {
     fetch('/api/telegram/status')
       .then(res => res.json())
-      .then(data => setTelegramConfigured(data.configured))
-      .catch(() => setTelegramConfigured(false));
+      .then(data => {
+        const settings = loadSettings();
+        setTelegramConfigured(data.configured || (!!settings.telegramBotToken && !!settings.telegramChatId));
+      })
+      .catch(() => {
+        const settings = loadSettings();
+        setTelegramConfigured(!!settings.telegramBotToken && !!settings.telegramChatId);
+      });
   }, []);
 
   useEffect(() => {

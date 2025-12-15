@@ -1,0 +1,67 @@
+╔════════════════════════════════════════════════════════════════════════╗
+║                          COMPLETE FOREX DASHBOARD                        ║
+╠════════════════════════════════════════════════════════════════════════╣
+║ 1. Purpose                                                             ║
+║ - Interactive Forex/XAU/USD dashboard                                   ║
+║ - Live placeholder signals (replace with bot later)                     ║
+║ - Automatic WIN/LOSS logging                                           ║
+║ - Trading journal with CSV export                                       ║
+║ - Telegram bot integration (token/chat ID saved locally)                ║
+║ - Fully modular for future upgrades                                     ║
+╠════════════════════════════════════════════════════════════════════════╣
+║ 2. Tech Stack                                                          ║
+║ - Frontend: React.js + Tailwind CSS                                     ║
+║ - Animations: Framer Motion                                             ║
+║ - Charts: Recharts / sparklines                                         ║
+║ - State: React Context / Zustand                                        ║
+║ - Local Storage: bot token, chat ID, default pairs/timeframes, journal  ║
+║ - Backend (optional for persistence): Node.js + Express                ║
+║ - Placeholder API for signals (replace later with bot data)             ║
+╠════════════════════════════════════════════════════════════════════════╣
+║ 3. Folder Structure / Files                                            ║
+║ - /src                                                                 ║
+║   ├─ index.js (ReactDOM render, load App)                               ║
+║   ├─ App.js (Main dashboard layout + panels)                            ║
+║   ├─ components/                                                        ║
+║   │   ├─ SignalCard.js (Live signals placeholder)                       ║
+║   │   ├─ JournalTable.js (Sortable/filterable journal)                  ║
+║   │   ├─ SettingsModal.js (Bot token, chat ID, default pairs)           ║
+║   │   ├─ TopBar.js (Timeframe selector, market selector, settings btn)  ║
+║   │   └─ Alerts.js (Floating notifications)                              ║
+║   └─ utils/                                                             ║
+║       ├─ localStorage.js (save/load settings & journal)                 ║
+║       └─ api.js (placeholder fetch functions for signals)               ║
+║ - package.json (React + Tailwind + Framer Motion + Recharts)            ║
+║ - tailwind.config.js / postcss.config.js                                 ║
+║ - index.html (root HTML file)                                           ║
+╠════════════════════════════════════════════════════════════════════════╣
+║ 4. Features / Functionality                                             ║
+║ - Signal Panel: cards showing pair, direction, entry, SL/TP, confidence ║
+║ - Signal click → opens detailed modal with mini chart                   ║
+║ - Journal Panel: auto-log signals, sortable, filterable, export CSV     ║
+║ - Settings Panel: save/load bot token, chat ID, default pairs/timeframes║
+║ - Alerts: floating notifications for new signals & expiry               ║
+║ - Countdown timers for each signal card                                  ║
+║ - Local storage ensures settings & journal persist on reload             ║
+║ - Dark/Light mode toggle                                                 ║
+║ - Fully responsive, immersive, clickable, animated UI                    ║
+║ - Modular: new signals, pairs, charts, AI features can be added later   ║
+╠════════════════════════════════════════════════════════════════════════╣
+║ 5. Replit Setup                                                        ║
+║ - Create a new Replit → Import from GitHub (use your gilgalo-trading-   ║
+║   dashboard repo)                                                        ║
+║ - Install Node.js (Replit default)                                       ║
+║ - Run: npm install / npm start                                           ║
+║ - Dashboard will open → live placeholder signals displayed               ║
+║ - Local storage will remember bot token, chat ID, journal automatically ║
+║ - You can click settings to update bot token/chat ID without touching AI║
+╠════════════════════════════════════════════════════════════════════════╣
+║ 6. Suggestions / Future Upgrades                                        ║
+║ - Connect API to your live bot for real-time signals                     ║
+║ - Add more pairs like XAU/USD, EUR/USD, GBP/JPY                          ║
+║ - Enable Telegram auto-send via backend                                  ║
+║ - Add chart previews in signal modal                                     ║
+║ - Add session filters (London, New York, Asian)                           ║
+║ - Add stake management & notifications                                   ║
+║ - Expand journal analytics (win rate, streaks, P/L summary)             ║
+╚════════════════════════════════════════════════════════════════════════╝

@@ -5,8 +5,15 @@ export const FOREX_PAIRS = [
 ] as const;
 
 export const TIMEFRAMES = [
-  "M1", "M5", "M15", "M30", "H1", "H4"
+  { value: "M1", label: "1 Minute" },
+  { value: "M5", label: "5 Minutes" },
+  { value: "M15", label: "15 Minutes" },
+  { value: "M30", label: "30 Minutes" },
+  { value: "H1", label: "1 Hour" },
+  { value: "H4", label: "4 Hours" },
 ] as const;
+
+export const TIMEFRAME_VALUES = ["M1", "M5", "M15", "M30", "H1", "H4"] as const;
 
 export const MARTINGALE_CONFIG = {
   enabled: false, // DISABLED: Fixed stake only for maximum accuracy
