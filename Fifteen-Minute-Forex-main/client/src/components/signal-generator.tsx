@@ -49,17 +49,15 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     return () => clearInterval(interval);
   }, [selectedPair, onPairChange]);
 
-  // Convert timeframe to minutes
   const getIntervalMinutes = (tf: string) => {
     if (tf.startsWith("M")) return parseInt(tf.substring(1));
     if (tf.startsWith("H")) return parseInt(tf.substring(1)) * 60;
     return 0;
   };
 
-  // Check if it's time for pre-alert
   const isPreAlertTime = (tf: string) => {
     const nowUTC = new Date();
-    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // Kenya UTC+3
+    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // UTC+3
     const intervalMinutes = getIntervalMinutes(tf);
     const minutes = nowKenya.getMinutes();
     const seconds = nowKenya.getSeconds();
@@ -76,7 +74,7 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID,
-          text: `NEW SIGNAL 👤\n━━━━━━━━━━━━━━━━━━━━━\n📊 PAIR: ${signal.pair}\n🟢 DIRECTION: ${signal.type} 📈\n⏱ TIMEFRAME: ${signal.timeframe}\n\n🕐 START TIME: ${signal.startTime}\n🏁 EXPIRY TIME: ${signal.endTime}\n\n🎯 ENTRY: ${signal.entry}\n🛑 STOP LOSS: ${signal.stopLoss}\n💰 TAKE PROFIT: ${signal.takeProfit}\n⚡ CONFIDENCE: ${signal.confidence}%\n━━━━━━━━━━━━━━━━━━━━━\n*This is an automated alert*`
+          text: `NEW SIGNAL 👤\n━━━━━━━━━━━━━━━━━━━━━\n📊 PAIR: ${signal.pair}\n🟢 DIRECTION: ${signal.type} 📈\n⏱ TIMEFRAME: ${signal.timeframe}\n\n🕐 START TIME: ${signal.startTime}\n🏁 EXPIRY TIME: ${signal.endTime}\n\n🎯 ENTRY: ${signal.entry}\n🛑 STOP LOSS: ${signal.stopLoss}\n💰 TAKE PROFIT: ${signal.takeProfit}\n⚡ CONFIDENCE: ${signal.confidence}%\n━━━━━━━━━━━━━━━━━━━━━\n*Automated alert*`
         }),
       });
     } catch (err) {
@@ -84,8 +82,13 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     }
   };
 
-  // Generate a signal for a pair and timeframe
   const generateSignalForPair = async (pair: string, tf: string) => {
+    // Prevent duplicate signals for same pair & timeframe
+    const hasActiveSignal = lastSignals.some(
+      s => s.pair === pair && s.timeframe === tf && s.status === "active"
+    );
+    if (hasActiveSignal) return;
+
     setIsAnalyzing(true);
     try {
       const response = await fetch("/api/forex/signal", {
@@ -139,7 +142,7 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     }
   };
 
-  // AutoMode: continuously scan all pairs and timeframes
+  // AutoMode scan every 30 seconds
   useEffect(() => {
     if (!autoMode) return;
     const interval = setInterval(() => {
@@ -151,9 +154,9 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
           }
         });
       });
-    }, 30000); // 30s scan interval
+    }, 30000); // 30 seconds
     return () => clearInterval(interval);
-  }, [autoMode]);
+  }, [autoMode, lastSignals]);
 
   const handlePairChange = (val: string) => {
     setSelectedPair(val);
