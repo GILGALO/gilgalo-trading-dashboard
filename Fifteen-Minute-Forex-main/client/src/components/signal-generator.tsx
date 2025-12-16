@@ -9,7 +9,6 @@ import { format, addMinutes } from "date-fns";
 interface SignalGeneratorProps {
   onSignalGenerated: (signal: Signal) => void;
   onPairChange: (pair: string) => void;
-  sendTelegramSignal: (signal: Signal) => void; // make sure your Telegram function is passed
 }
 
 interface SignalAnalysisResponse {
@@ -23,7 +22,7 @@ interface SignalAnalysisResponse {
   reasoning: string[];
 }
 
-export default function SignalGenerator({ onSignalGenerated, onPairChange, sendTelegramSignal }: SignalGeneratorProps) {
+export default function SignalGenerator({ onSignalGenerated, onPairChange }: SignalGeneratorProps) {
   const [currentSession, setCurrentSession] = useState(getCurrentSession());
   const [availablePairs, setAvailablePairs] = useState<string[]>(currentSession.pairs);
   const [selectedPair, setSelectedPair] = useState<string>(currentSession.pairs[0]);
@@ -50,39 +49,41 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange, sendT
     return () => clearInterval(interval);
   }, [selectedPair, onPairChange]);
 
+  // Convert timeframe to minutes
   const getIntervalMinutes = (tf: string) => {
     if (tf.startsWith("M")) return parseInt(tf.substring(1));
     if (tf.startsWith("H")) return parseInt(tf.substring(1)) * 60;
     return 0;
   };
 
+  // Check if it's time for pre-alert
   const isPreAlertTime = (tf: string) => {
     const nowUTC = new Date();
-    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // UTC+3
+    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // Kenya UTC+3
     const intervalMinutes = getIntervalMinutes(tf);
     const minutes = nowKenya.getMinutes();
     const seconds = nowKenya.getSeconds();
     const minutesSinceLastCandle = minutes % intervalMinutes;
     const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
+
     return minutesToNextCandle <= PRE_ALERT_MINUTES && seconds < 5;
   };
 
+  // Generate a signal for a pair and timeframe
   const generateSignalForPair = async (pair: string, tf: string) => {
+    setIsAnalyzing(true);
     try {
-      setIsAnalyzing(true);
       const response = await fetch("/api/forex/signal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pair, timeframe: tf }),
       });
+
       if (!response.ok) throw new Error("Signal generation failed");
       const analysisResult: SignalAnalysisResponse = await response.json();
 
-      // Only proceed if signal passed filters
-      if (analysisResult.confidence <= 0) {
-        setIsAnalyzing(false);
-        return; // skip blocked signals
-      }
+      // Only continue if signal is valid and confidence > 0
+      if (!analysisResult || analysisResult.confidence <= 0) return;
 
       const nowUTC = new Date();
       const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
@@ -107,27 +108,32 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange, sendT
         startTime: format(startTimeDate, "HH:mm"),
         endTime: format(endTimeDate, "HH:mm"),
         status: "active",
-        label: `${tf} Signal`
+        label: `${tf} Signal`,
       };
 
-      // Avoid duplicates
-      setLastSignals(prev => {
-        const exists = prev.find(s => s.pair === signal.pair && s.timeframe === signal.timeframe && s.startTime === signal.startTime);
-        if (exists) return prev;
-        return [...prev, signal];
-      });
-
+      // Save to state
+      setLastSignals(prev => [...prev, signal]);
       onSignalGenerated(signal);
-      sendTelegramSignal(signal); // send to Telegram
-      setIsAnalyzing(false);
+
+      // Save to localStorage
+      const savedSignals = JSON.parse(localStorage.getItem("gilgalo-signals") || "[]");
+      localStorage.setItem("gilgalo-signals", JSON.stringify([...savedSignals, signal]));
+
+      // Send to Telegram
+      await fetch("/api/telegram/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signal),
+      });
 
     } catch (error) {
       console.error("Signal generation error:", error);
+    } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // AutoMode scanning
+  // AutoMode: scan all pairs and timeframes
   useEffect(() => {
     if (!autoMode) return;
     const interval = setInterval(() => {
@@ -139,7 +145,7 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange, sendT
           }
         });
       });
-    }, 15000); // scan every 15s to reduce overload
+    }, 15000); // every 15 seconds
     return () => clearInterval(interval);
   }, [autoMode]);
 
@@ -149,16 +155,6 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange, sendT
   };
 
   const handleTimeframeChange = (val: string) => setTimeframe(val);
-
-  const handleManualGenerate = () => {
-    // Manual can scan either selected pair or all pairs
-    FOREX_PAIRS.forEach(pair => {
-      TIMEFRAMES.forEach(tfObj => {
-        const tf = tfObj.value;
-        generateSignalForPair(pair, tf);
-      });
-    });
-  };
 
   return (
     <div className="space-y-5">
@@ -188,8 +184,10 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange, sendT
               </Select>
             </div>
           </div>
-          <Button onClick={handleManualGenerate} disabled={isAnalyzing} className="w-full h-14 font-bold">
-            {isAnalyzing ? "Analyzing..." : "Generate Signals (Manual Scan)"}
+          <Button onClick={() => FOREX_PAIRS.forEach(pair => TIMEFRAMES.forEach(tf => generateSignalForPair(pair, tf.value)))}
+                  disabled={isAnalyzing || !autoMode}
+                  className="w-full h-14 font-bold">
+            {isAnalyzing ? "Analyzing..." : "Generate Manual Signal"}
           </Button>
         </CardContent>
       </Card>
