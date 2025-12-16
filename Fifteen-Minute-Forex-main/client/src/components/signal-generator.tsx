@@ -51,18 +51,30 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
   const getIntervalMinutes = (tf: string) => {
     if (tf.startsWith("M")) return parseInt(tf.substring(1));
     if (tf.startsWith("H")) return parseInt(tf.substring(1)) * 60;
+    if (tf.startsWith("D")) return parseInt(tf.substring(1)) * 60 * 24;
     return 0;
   };
 
+  const getNextCandleStart = (tf: string) => {
+    const nowUTC = new Date();
+    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // UTC+3
+    const intervalMinutes = getIntervalMinutes(tf);
+
+    const minutes = nowKenya.getMinutes();
+    const remainder = minutes % intervalMinutes;
+    const minutesToNextCandle = remainder === 0 ? 0 : intervalMinutes - remainder;
+
+    const startTimeDate = new Date(nowKenya);
+    startTimeDate.setMinutes(nowKenya.getMinutes() + minutesToNextCandle, 0, 0);
+    return startTimeDate;
+  };
+
   const isPreAlertTime = (tf: string) => {
+    const nextCandle = getNextCandleStart(tf);
     const nowUTC = new Date();
     const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
-    const intervalMinutes = getIntervalMinutes(tf);
-    const minutes = nowKenya.getMinutes();
-    const seconds = nowKenya.getSeconds();
-    const minutesSinceLastCandle = minutes % intervalMinutes;
-    const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
-    return minutesToNextCandle <= PRE_ALERT_MINUTES && seconds < 5;
+    const diffMinutes = (nextCandle.getTime() - nowKenya.getTime()) / 60000;
+    return diffMinutes <= PRE_ALERT_MINUTES && diffMinutes >= 0;
   };
 
   const sendTelegramNotification = async (signal: Signal) => {
@@ -77,8 +89,10 @@ Type: ${signal.type}
 Timeframe: ${signal.timeframe}
 Start: ${signal.startTime}
 End: ${signal.endTime}
+Entry: ${signal.entry}
+Stop Loss: ${signal.stopLoss}
+Take Profit: ${signal.takeProfit}
 Confidence: ${signal.confidence}%
-Label: ${signal.label}
     `;
 
     try {
@@ -95,6 +109,7 @@ Label: ${signal.label}
   const generateSignalForPair = async (pair: string, tf: string) => {
     try {
       setIsAnalyzing(true);
+
       const response = await fetch("/api/forex/signal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,15 +118,8 @@ Label: ${signal.label}
       if (!response.ok) throw new Error("Signal generation failed");
       const analysisResult: SignalAnalysisResponse = await response.json();
 
-      const nowUTC = new Date();
-      const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
-      const intervalMinutes = getIntervalMinutes(tf);
-      const currentMinutes = nowKenya.getMinutes();
-      const minutesSinceLastCandle = currentMinutes % intervalMinutes;
-      const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
-      const startTimeDate = addMinutes(nowKenya, minutesToNextCandle);
-      startTimeDate.setSeconds(0, 0);
-      const endTimeDate = addMinutes(startTimeDate, intervalMinutes);
+      const startTimeDate = getNextCandleStart(tf);
+      const endTimeDate = addMinutes(startTimeDate, getIntervalMinutes(tf));
 
       const signal: Signal = {
         id: Math.random().toString(36).substring(7),
