@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { motion } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,13 +26,13 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
   const [currentSession, setCurrentSession] = useState(getCurrentSession());
   const [availablePairs, setAvailablePairs] = useState<string[]>(currentSession.pairs);
   const [selectedPair, setSelectedPair] = useState<string>(currentSession.pairs[0]);
-  const [timeframe, setTimeframe] = useState<string>("M5");
+  const [timeframe, setTimeframe] = useState<string>("M15");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [lastSignal, setLastSignal] = useState<Signal | null>(null);
-  const [autoMode, setAutoMode] = useState(false);
-  const [nextSignalTime, setNextSignalTime] = useState<number | null>(null);
+  const [lastSignals, setLastSignals] = useState<Signal[]>([]);
+  const [autoMode, setAutoMode] = useState(true);
 
-  // Load session updates every 5 minutes
+  const PRE_ALERT_MINUTES = 6; // pre-alert before candle start
+
   useEffect(() => {
     const updateSession = () => {
       const session = getCurrentSession();
@@ -49,39 +48,75 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     return () => clearInterval(interval);
   }, [selectedPair, onPairChange]);
 
-  const generateSignal = async (isAuto = false) => {
-    setIsAnalyzing(true);
-    setLastSignal(null);
+  const getIntervalMinutes = (tf: string) => {
+    if (tf.startsWith("M")) return parseInt(tf.substring(1));
+    if (tf.startsWith("H")) return parseInt(tf.substring(1)) * 60;
+    return 0;
+  };
+
+  const isPreAlertTime = (tf: string) => {
+    const nowUTC = new Date();
+    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
+    const intervalMinutes = getIntervalMinutes(tf);
+    const minutes = nowKenya.getMinutes();
+    const seconds = nowKenya.getSeconds();
+    const minutesSinceLastCandle = minutes % intervalMinutes;
+    const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
+    return minutesToNextCandle <= PRE_ALERT_MINUTES && seconds < 5;
+  };
+
+  const sendTelegramNotification = async (signal: Signal) => {
+    if (!process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || !process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID) return;
+    const BOT_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
+    const CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID;
+
+    const message = `
+🚀 PRE-ALERT SIGNAL
+Pair: ${signal.pair}
+Type: ${signal.type}
+Timeframe: ${signal.timeframe}
+Start: ${signal.startTime}
+End: ${signal.endTime}
+Confidence: ${signal.confidence}%
+Label: ${signal.label}
+    `;
 
     try {
-      // Fetch signal from API
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: CHAT_ID, text: message }),
+      });
+    } catch (error) {
+      console.error("Telegram notification error:", error);
+    }
+  };
+
+  const generateSignalForPair = async (pair: string, tf: string) => {
+    try {
+      setIsAnalyzing(true);
       const response = await fetch("/api/forex/signal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair: selectedPair, timeframe }),
+        body: JSON.stringify({ pair, timeframe: tf }),
       });
       if (!response.ok) throw new Error("Signal generation failed");
       const analysisResult: SignalAnalysisResponse = await response.json();
 
-      const KENYA_OFFSET_MS = 3 * 60 * 60 * 1000;
       const nowUTC = new Date();
-      const nowKenya = new Date(nowUTC.getTime() + KENYA_OFFSET_MS);
-      const intervalMinutes = timeframe.startsWith("M") ? parseInt(timeframe.substring(1)) : parseInt(timeframe.substring(1)) * 60;
+      const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
+      const intervalMinutes = getIntervalMinutes(tf);
       const currentMinutes = nowKenya.getMinutes();
-      const currentSeconds = nowKenya.getSeconds();
       const minutesSinceLastCandle = currentMinutes % intervalMinutes;
-      let minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
-      if (minutesSinceLastCandle === 0 && currentSeconds < 30) minutesToNextCandle = intervalMinutes;
-      if (minutesToNextCandle < 2) minutesToNextCandle += intervalMinutes;
-
+      const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
       const startTimeDate = addMinutes(nowKenya, minutesToNextCandle);
       startTimeDate.setSeconds(0, 0);
       const endTimeDate = addMinutes(startTimeDate, intervalMinutes);
 
       const signal: Signal = {
         id: Math.random().toString(36).substring(7),
-        pair: analysisResult.pair,
-        timeframe,
+        pair,
+        timeframe: tf,
         type: analysisResult.signalType,
         entry: analysisResult.entry,
         stopLoss: analysisResult.stopLoss,
@@ -91,15 +126,16 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
         startTime: format(startTimeDate, "HH:mm"),
         endTime: format(endTimeDate, "HH:mm"),
         status: "active",
+        label: `${tf} Signal`
       };
 
-      setLastSignal(signal);
+      setLastSignals(prev => [...prev, signal]);
       onSignalGenerated(signal);
-      if (isAuto) setNextSignalTime(Date.now() + 7 * 60 * 1000);
 
-      // Save to localStorage
       const savedSignals = JSON.parse(localStorage.getItem("gilgalo-signals") || "[]");
       localStorage.setItem("gilgalo-signals", JSON.stringify([...savedSignals, signal]));
+
+      sendTelegramNotification(signal);
 
     } catch (error) {
       console.error("Signal generation error:", error);
@@ -108,37 +144,20 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     }
   };
 
-  // Auto-check signal result after expiry
   useEffect(() => {
-    const interval = setInterval(async () => {
-      if (!lastSignal || lastSignal.status !== "active") return;
-      const [hours, minutes] = lastSignal.endTime.split(":").map(Number);
-      const endDate = new Date();
-      endDate.setHours(hours, minutes, 0, 0);
-      if (Date.now() >= endDate.getTime()) {
-        try {
-          const res = await fetch(`/api/forex/price?pair=${lastSignal.pair}`);
-          if (!res.ok) return;
-          const data = await res.json();
-          const currentPrice = data.price;
-          let status: "won" | "lost" = "lost";
-          if ((lastSignal.type === "CALL" && currentPrice > lastSignal.entry) ||
-              (lastSignal.type === "PUT" && currentPrice < lastSignal.entry)) status = "won";
-
-          const updatedSignal = { ...lastSignal, status };
-          setLastSignal(updatedSignal);
-
-          // Update localStorage
-          const savedSignals = JSON.parse(localStorage.getItem("gilgalo-signals") || "[]");
-          const filtered = savedSignals.filter((s: Signal) => s.id !== updatedSignal.id);
-          localStorage.setItem("gilgalo-signals", JSON.stringify([...filtered, updatedSignal]));
-        } catch (e) {
-          console.error("Error checking signal result:", e);
-        }
-      }
-    }, 5000);
+    if (!autoMode) return;
+    const interval = setInterval(() => {
+      FOREX_PAIRS.forEach(pair => {
+        TIMEFRAMES.forEach(tfObj => {
+          const tf = tfObj.value;
+          if (isPreAlertTime(tf)) {
+            generateSignalForPair(pair, tf);
+          }
+        });
+      });
+    }, 30000); // 30 seconds scan interval
     return () => clearInterval(interval);
-  }, [lastSignal]);
+  }, [autoMode]);
 
   const handlePairChange = (val: string) => {
     setSelectedPair(val);
@@ -175,7 +194,7 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
               </Select>
             </div>
           </div>
-          <Button onClick={() => generateSignal(false)} disabled={isAnalyzing || autoMode} className="w-full h-14 font-bold">
+          <Button onClick={() => generateSignalForPair(selectedPair, timeframe)} disabled={isAnalyzing} className="w-full h-14 font-bold">
             {isAnalyzing ? "Analyzing..." : "Generate Signal"}
           </Button>
         </CardContent>
