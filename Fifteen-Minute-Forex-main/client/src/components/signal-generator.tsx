@@ -9,6 +9,7 @@ import { format, addMinutes } from "date-fns";
 interface SignalGeneratorProps {
   onSignalGenerated: (signal: Signal) => void;
   onPairChange: (pair: string) => void;
+  sendTelegramSignal: (signal: Signal) => void; // make sure your Telegram function is passed
 }
 
 interface SignalAnalysisResponse {
@@ -22,7 +23,7 @@ interface SignalAnalysisResponse {
   reasoning: string[];
 }
 
-export default function SignalGenerator({ onSignalGenerated, onPairChange }: SignalGeneratorProps) {
+export default function SignalGenerator({ onSignalGenerated, onPairChange, sendTelegramSignal }: SignalGeneratorProps) {
   const [currentSession, setCurrentSession] = useState(getCurrentSession());
   const [availablePairs, setAvailablePairs] = useState<string[]>(currentSession.pairs);
   const [selectedPair, setSelectedPair] = useState<string>(currentSession.pairs[0]);
@@ -63,34 +64,12 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     const seconds = nowKenya.getSeconds();
     const minutesSinceLastCandle = minutes % intervalMinutes;
     const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
-    return minutesToNextCandle <= PRE_ALERT_MINUTES && seconds < 5; // trigger once per minute
-  };
-
-  // Send signal to Telegram
-  const sendTelegramSignal = async (signal: Signal) => {
-    try {
-      await fetch(`https://api.telegram.org/bot${process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID,
-          text: `NEW SIGNAL 👤\n━━━━━━━━━━━━━━━━━━━━━\n📊 PAIR: ${signal.pair}\n🟢 DIRECTION: ${signal.type} 📈\n⏱ TIMEFRAME: ${signal.timeframe}\n\n🕐 START TIME: ${signal.startTime}\n🏁 EXPIRY TIME: ${signal.endTime}\n\n🎯 ENTRY: ${signal.entry}\n🛑 STOP LOSS: ${signal.stopLoss}\n💰 TAKE PROFIT: ${signal.takeProfit}\n⚡ CONFIDENCE: ${signal.confidence}%\n━━━━━━━━━━━━━━━━━━━━━\n*Automated alert*`
-        }),
-      });
-    } catch (err) {
-      console.error("Telegram send error:", err);
-    }
+    return minutesToNextCandle <= PRE_ALERT_MINUTES && seconds < 5;
   };
 
   const generateSignalForPair = async (pair: string, tf: string) => {
-    // Prevent duplicate signals for same pair & timeframe
-    const hasActiveSignal = lastSignals.some(
-      s => s.pair === pair && s.timeframe === tf && s.status === "active"
-    );
-    if (hasActiveSignal) return;
-
-    setIsAnalyzing(true);
     try {
+      setIsAnalyzing(true);
       const response = await fetch("/api/forex/signal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,6 +77,12 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
       });
       if (!response.ok) throw new Error("Signal generation failed");
       const analysisResult: SignalAnalysisResponse = await response.json();
+
+      // Only proceed if signal passed filters
+      if (analysisResult.confidence <= 0) {
+        setIsAnalyzing(false);
+        return; // skip blocked signals
+      }
 
       const nowUTC = new Date();
       const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
@@ -111,7 +96,7 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
 
       const signal: Signal = {
         id: Math.random().toString(36).substring(7),
-        pair,
+        pair: pair,
         timeframe: tf,
         type: analysisResult.signalType,
         entry: analysisResult.entry,
@@ -125,24 +110,24 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
         label: `${tf} Signal`
       };
 
-      setLastSignals(prev => [...prev, signal]);
+      // Avoid duplicates
+      setLastSignals(prev => {
+        const exists = prev.find(s => s.pair === signal.pair && s.timeframe === signal.timeframe && s.startTime === signal.startTime);
+        if (exists) return prev;
+        return [...prev, signal];
+      });
+
       onSignalGenerated(signal);
-
-      // Send to Telegram
-      sendTelegramSignal(signal);
-
-      // Save to localStorage
-      const savedSignals = JSON.parse(localStorage.getItem("gilgalo-signals") || "[]");
-      localStorage.setItem("gilgalo-signals", JSON.stringify([...savedSignals, signal]));
+      sendTelegramSignal(signal); // send to Telegram
+      setIsAnalyzing(false);
 
     } catch (error) {
       console.error("Signal generation error:", error);
-    } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // AutoMode scan every 30 seconds
+  // AutoMode scanning
   useEffect(() => {
     if (!autoMode) return;
     const interval = setInterval(() => {
@@ -154,9 +139,9 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
           }
         });
       });
-    }, 30000); // 30 seconds
+    }, 15000); // scan every 15s to reduce overload
     return () => clearInterval(interval);
-  }, [autoMode, lastSignals]);
+  }, [autoMode]);
 
   const handlePairChange = (val: string) => {
     setSelectedPair(val);
@@ -164,6 +149,16 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
   };
 
   const handleTimeframeChange = (val: string) => setTimeframe(val);
+
+  const handleManualGenerate = () => {
+    // Manual can scan either selected pair or all pairs
+    FOREX_PAIRS.forEach(pair => {
+      TIMEFRAMES.forEach(tfObj => {
+        const tf = tfObj.value;
+        generateSignalForPair(pair, tf);
+      });
+    });
+  };
 
   return (
     <div className="space-y-5">
@@ -193,8 +188,8 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
               </Select>
             </div>
           </div>
-          <Button onClick={() => generateSignalForPair(selectedPair, timeframe)} disabled={isAnalyzing} className="w-full h-14 font-bold">
-            {isAnalyzing ? "Analyzing..." : "Generate Signal"}
+          <Button onClick={handleManualGenerate} disabled={isAnalyzing} className="w-full h-14 font-bold">
+            {isAnalyzing ? "Analyzing..." : "Generate Signals (Manual Scan)"}
           </Button>
         </CardContent>
       </Card>
