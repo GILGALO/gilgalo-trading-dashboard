@@ -33,6 +33,7 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
 
   const PRE_ALERT_MINUTES = 6; // pre-alert before candle start
 
+  // Update session pairs every 5 minutes
   useEffect(() => {
     const updateSession = () => {
       const session = getCurrentSession();
@@ -48,68 +49,45 @@ export default function SignalGenerator({ onSignalGenerated, onPairChange }: Sig
     return () => clearInterval(interval);
   }, [selectedPair, onPairChange]);
 
+  // Convert timeframe to minutes
   const getIntervalMinutes = (tf: string) => {
     if (tf.startsWith("M")) return parseInt(tf.substring(1));
     if (tf.startsWith("H")) return parseInt(tf.substring(1)) * 60;
-    if (tf.startsWith("D")) return parseInt(tf.substring(1)) * 60 * 24;
     return 0;
   };
 
-  const getNextCandleStart = (tf: string) => {
-    const nowUTC = new Date();
-    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // UTC+3
-    const intervalMinutes = getIntervalMinutes(tf);
-
-    const minutes = nowKenya.getMinutes();
-    const remainder = minutes % intervalMinutes;
-    const minutesToNextCandle = remainder === 0 ? 0 : intervalMinutes - remainder;
-
-    const startTimeDate = new Date(nowKenya);
-    startTimeDate.setMinutes(nowKenya.getMinutes() + minutesToNextCandle, 0, 0);
-    return startTimeDate;
-  };
-
+  // Check if it's time for pre-alert
   const isPreAlertTime = (tf: string) => {
-    const nextCandle = getNextCandleStart(tf);
     const nowUTC = new Date();
-    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
-    const diffMinutes = (nextCandle.getTime() - nowKenya.getTime()) / 60000;
-    return diffMinutes <= PRE_ALERT_MINUTES && diffMinutes >= 0;
+    const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000); // Kenya UTC+3
+    const intervalMinutes = getIntervalMinutes(tf);
+    const minutes = nowKenya.getMinutes();
+    const seconds = nowKenya.getSeconds();
+    const minutesSinceLastCandle = minutes % intervalMinutes;
+    const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
+    return minutesToNextCandle <= PRE_ALERT_MINUTES && seconds < 5; // trigger once per minute
   };
 
-  const sendTelegramNotification = async (signal: Signal) => {
-    if (!process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN || !process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID) return;
-    const BOT_TOKEN = process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
-    const CHAT_ID = process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID;
-
-    const message = `
-🚀 PRE-ALERT SIGNAL
-Pair: ${signal.pair}
-Type: ${signal.type}
-Timeframe: ${signal.timeframe}
-Start: ${signal.startTime}
-End: ${signal.endTime}
-Entry: ${signal.entry}
-Stop Loss: ${signal.stopLoss}
-Take Profit: ${signal.takeProfit}
-Confidence: ${signal.confidence}%
-    `;
-
+  // Send signal to Telegram
+  const sendTelegramSignal = async (signal: Signal) => {
     try {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: CHAT_ID, text: message }),
+        body: JSON.stringify({
+          chat_id: process.env.NEXT_PUBLIC_TELEGRAM_CHAT_ID,
+          text: `NEW SIGNAL 👤\n━━━━━━━━━━━━━━━━━━━━━\n📊 PAIR: ${signal.pair}\n🟢 DIRECTION: ${signal.type} 📈\n⏱ TIMEFRAME: ${signal.timeframe}\n\n🕐 START TIME: ${signal.startTime}\n🏁 EXPIRY TIME: ${signal.endTime}\n\n🎯 ENTRY: ${signal.entry}\n🛑 STOP LOSS: ${signal.stopLoss}\n💰 TAKE PROFIT: ${signal.takeProfit}\n⚡ CONFIDENCE: ${signal.confidence}%\n━━━━━━━━━━━━━━━━━━━━━\n*This is an automated alert*`
+        }),
       });
-    } catch (error) {
-      console.error("Telegram notification error:", error);
+    } catch (err) {
+      console.error("Telegram send error:", err);
     }
   };
 
+  // Generate a signal for a pair and timeframe
   const generateSignalForPair = async (pair: string, tf: string) => {
+    setIsAnalyzing(true);
     try {
-      setIsAnalyzing(true);
-
       const response = await fetch("/api/forex/signal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -118,8 +96,15 @@ Confidence: ${signal.confidence}%
       if (!response.ok) throw new Error("Signal generation failed");
       const analysisResult: SignalAnalysisResponse = await response.json();
 
-      const startTimeDate = getNextCandleStart(tf);
-      const endTimeDate = addMinutes(startTimeDate, getIntervalMinutes(tf));
+      const nowUTC = new Date();
+      const nowKenya = new Date(nowUTC.getTime() + 3 * 60 * 60 * 1000);
+      const intervalMinutes = getIntervalMinutes(tf);
+      const currentMinutes = nowKenya.getMinutes();
+      const minutesSinceLastCandle = currentMinutes % intervalMinutes;
+      const minutesToNextCandle = intervalMinutes - minutesSinceLastCandle;
+      const startTimeDate = addMinutes(nowKenya, minutesToNextCandle);
+      startTimeDate.setSeconds(0, 0);
+      const endTimeDate = addMinutes(startTimeDate, intervalMinutes);
 
       const signal: Signal = {
         id: Math.random().toString(36).substring(7),
@@ -140,10 +125,12 @@ Confidence: ${signal.confidence}%
       setLastSignals(prev => [...prev, signal]);
       onSignalGenerated(signal);
 
+      // Send to Telegram
+      sendTelegramSignal(signal);
+
+      // Save to localStorage
       const savedSignals = JSON.parse(localStorage.getItem("gilgalo-signals") || "[]");
       localStorage.setItem("gilgalo-signals", JSON.stringify([...savedSignals, signal]));
-
-      sendTelegramNotification(signal);
 
     } catch (error) {
       console.error("Signal generation error:", error);
@@ -152,6 +139,7 @@ Confidence: ${signal.confidence}%
     }
   };
 
+  // AutoMode: continuously scan all pairs and timeframes
   useEffect(() => {
     if (!autoMode) return;
     const interval = setInterval(() => {
@@ -163,7 +151,7 @@ Confidence: ${signal.confidence}%
           }
         });
       });
-    }, 30000); // 30 seconds scan interval
+    }, 30000); // 30s scan interval
     return () => clearInterval(interval);
   }, [autoMode]);
 
